@@ -37,6 +37,7 @@ func (s *dnsStream) Accept(tcp *layers.TCP, _ gopacket.CaptureInfo, _ reassembly
 
 func (s *dnsStream) ReassembledSG(sg reassembly.ScatterGather, _ reassembly.AssemblerContext) {
 	if _, _, _, skip := sg.Info(); skip != 0 {
+		s.d.vlog("dropping a TCP stream, %d bytes are missing", skip)
 		s.broken = true
 		return
 	}

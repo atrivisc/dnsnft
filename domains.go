@@ -33,7 +33,7 @@ func (d *daemon) loadDomains(path string) (map[string]*domain, error) {
 		}
 
 		s := sets[name]
-		if s == nil && *dryRun {
+		if s == nil && d.cfg.dryRun {
 			s = &nftables.Set{Name: name, Table: d.table, KeyType: want, HasTimeout: true}
 		} else if s == nil {
 			if s, err = d.nft.GetSetByName(d.table, name); err != nil {
@@ -73,7 +73,7 @@ func (d *daemon) loadDomains(path string) (map[string]*domain, error) {
 			return nil, fmt.Errorf("%s:%d: invalid domain %q", path, n, entry)
 		}
 
-		setNames := [2]string{*def4, *def6}
+		setNames := [2]string{d.cfg.def4, d.cfg.def6}
 		copy(setNames[:], fields[1:])
 		dom := &domain{wildcard: wildcard}
 		if dom.set4, err = lookup(setNames[0], nftables.TypeIPAddr); err == nil {

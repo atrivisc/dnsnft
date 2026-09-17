@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+const procQueueStats = "/proc/self/net/netfilter/nfnetlink_queue"
+
 type queueStats struct {
 	port        uint32
 	waiting     uint64
@@ -16,8 +18,8 @@ type queueStats struct {
 	queued      uint64
 }
 
-func readQueueStats(num uint16) (st queueStats, ok bool, err error) {
-	data, err := os.ReadFile("/proc/self/net/netfilter/nfnetlink_queue")
+func readQueueStats(proc string, num uint16) (st queueStats, ok bool, err error) {
+	data, err := os.ReadFile(proc)
 	if err != nil {
 		return st, false, err
 	}
@@ -40,12 +42,15 @@ func readQueueStats(num uint16) (st queueStats, ok bool, err error) {
 type queueMonitor struct {
 	num     uint16
 	port    uint32
+	proc    string
+	verbose bool
+	logger  *log.Logger
 	problem string
 	last    queueStats
 }
 
 func (m *queueMonitor) check() {
-	st, ok, err := readQueueStats(m.num)
+	st, ok, err := readQueueStats(m.proc, m.num)
 	problem := ""
 	switch {
 	case err != nil:
@@ -56,7 +61,7 @@ func (m *queueMonitor) check() {
 		problem = fmt.Sprintf("the kernel lists it as bound to netlink port %d, not ours (%d)", st.port, m.port)
 	}
 	if problem != m.problem && problem != "" {
-		log.Printf("queue %d: %s", m.num, problem)
+		m.logger.Printf("queue %d: %s", m.num, problem)
 	}
 	m.problem = problem
 	if problem != "" {
@@ -64,11 +69,11 @@ func (m *queueMonitor) check() {
 	}
 
 	if st.dropped > m.last.dropped || st.userDropped > m.last.userDropped {
-		log.Printf("queue %d: kernel dropped %d packets because the queue was full and %d it could not deliver",
+		m.logger.Printf("queue %d: kernel dropped %d packets because the queue was full and %d it could not deliver",
 			m.num, st.dropped-m.last.dropped, st.userDropped-m.last.userDropped)
 	}
-	if *verbose && st.queued != m.last.queued {
-		log.Printf("queue %d: %d packets queued so far, %d waiting for a verdict", m.num, st.queued, st.waiting)
+	if m.verbose && st.queued != m.last.queued {
+		m.logger.Printf("queue %d: %d packets queued so far, %d waiting for a verdict", m.num, st.queued, st.waiting)
 	}
 	m.last = st
 }

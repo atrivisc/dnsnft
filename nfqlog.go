@@ -8,14 +8,15 @@ import (
 )
 
 type nfqLogger struct {
-	ctx context.Context
+	logger *log.Logger
+	ctx    context.Context
 
 	mu   sync.Mutex
 	last map[string]time.Time
 }
 
 func newNfqLogger() *nfqLogger {
-	return &nfqLogger{last: map[string]time.Time{}}
+	return &nfqLogger{logger: log.Default(), last: map[string]time.Time{}}
 }
 
 func (*nfqLogger) Debugf(string, ...any) {}
@@ -31,5 +32,5 @@ func (l *nfqLogger) Errorf(format string, args ...any) {
 		return
 	}
 	l.last[format] = now
-	log.Printf("nfqueue: "+format, args...)
+	l.logger.Printf("nfqueue: "+format, args...)
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -15,7 +14,6 @@ import (
 
 	nfqueue "github.com/florianl/go-nfqueue/v2"
 	"github.com/google/nftables"
-	"github.com/gopacket/gopacket/reassembly"
 	"github.com/mdlayher/netlink"
 )
 
@@ -40,12 +38,6 @@ var families = map[string]nftables.TableFamily{
 	"netdev": nftables.TableFamilyNetdev,
 }
 
-func vlog(format string, args ...any) {
-	if *verbose {
-		log.Printf(format, args...)
-	}
-}
-
 func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: %s -d FILE [options]\n"+
@@ -68,21 +60,26 @@ func main() {
 	}
 	log.SetFlags(0)
 
-	d := &daemon{table: &nftables.Table{Name: *table, Family: fam}}
+	cfg := config{
+		domFile: *domFile,
+		def4:    *def4,
+		def6:    *def6,
+		extra:   *extra,
+		maxTTL:  *maxTTL,
+		dryRun:  *dryRun,
+		verbose: *verbose,
+	}
+	d := newDaemon(cfg, &nftables.Table{Name: *table, Family: fam})
 	var err error
-	if d.nft, err = nftables.New(nftables.AsLasting()); err != nil {
+	if d.nft, err = d.dial(); err != nil {
 		log.Fatalf("nftables: %v", err)
 	}
 
 	defer func() { _ = d.nft.CloseLasting() }()
-	if d.domains, err = d.loadDomains(*domFile); err != nil {
+	if d.domains, err = d.loadDomains(cfg.domFile); err != nil {
 		log.Fatal(err)
 	}
 	log.Printf("loaded %d domains", len(d.domains))
-
-	d.assembler = reassembly.NewAssembler(reassembly.NewStreamPool(d))
-	d.assembler.MaxBufferedPagesPerConnection = 128
-	d.assembler.MaxBufferedPagesTotal = 8192
 
 	nfqLog := newNfqLogger()
 	nf, err := nfqueue.Open(&nfqueue.Config{
@@ -105,29 +102,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	nfqLog.ctx = ctx
-	fatal := make(chan error, 1)
+	d.verdict = nf.SetVerdict
+	d.stopped = func() bool { return ctx.Err() != nil }
 
-	err = nf.RegisterWithErrorFunc(ctx, func(a nfqueue.Attribute) int {
-		if a.PacketID == nil {
-			return 0
-		}
-		d.mu.Lock()
-		if a.Payload != nil {
-			d.handlePacket(*a.Payload)
-		}
-		d.mu.Unlock()
-
-		if err := nf.SetVerdict(*a.PacketID, nfqueue.NfAccept); err != nil {
-			log.Printf("verdict: %v", err)
-		}
-		return 0
-	}, func(err error) int {
-		if ctx.Err() != nil || errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, syscall.ENOBUFS) {
-			return 0
-		}
-		fatal <- err
-		return 1
-	})
+	err = nf.RegisterWithErrorFunc(ctx, d.onPacket, d.onError)
 
 	if err != nil {
 		log.Fatalf("nfqueue queue %d: %v", *queueNum, err)
@@ -137,7 +115,13 @@ func main() {
 		netns = "unknown"
 	}
 	log.Printf("listening on queue %d (netlink port %d, network namespace %s)", *queueNum, nf.Con.PID(), netns)
-	mon := &queueMonitor{num: uint16(*queueNum), port: nf.Con.PID()}
+	mon := &queueMonitor{
+		num:     uint16(*queueNum),
+		port:    nf.Con.PID(),
+		proc:    procQueueStats,
+		verbose: cfg.verbose,
+		logger:  log.Default(),
+	}
 	mon.check()
 
 	hup := make(chan os.Signal, 1)
@@ -147,7 +131,7 @@ func main() {
 		select {
 		case <-ctx.Done():
 			return
-		case err := <-fatal:
+		case err := <-d.fatal:
 			log.Printf("nfqueue: %v", err)
 			return
 		case <-hup:
