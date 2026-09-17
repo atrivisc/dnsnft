@@ -25,7 +25,7 @@ var (
 	table    = flag.String("t", "filter", "table containing the sets")
 	def4     = flag.String("4", "", "default IPv4 set")
 	def6     = flag.String("6", "", "default IPv6 set")
-	domFile  = flag.String("d", "", "domain list: 'domain [ipv4-set [ipv6-set]]' per line, '-' = none")
+	domFile  = flag.String("d", "", "domain list: '[*.]domain [ipv4-set [ipv6-set]]' per line, '-' = none")
 	extra    = flag.Duration("g", 48*time.Hour, "added to each answer's TTL to give the element timeout")
 	maxTTL   = flag.Duration("M", 24*time.Hour, "longest TTL taken from an answer, before -g is added")
 	dryRun   = flag.Bool("n", false, "log additions instead of changing sets")
@@ -33,16 +33,25 @@ var (
 )
 
 var families = map[string]nftables.TableFamily{
-	"ip": nftables.TableFamilyIPv4,
-	"ip6": nftables.TableFamilyIPv6,
-	"inet": nftables.TableFamilyINet,
+	"ip":     nftables.TableFamilyIPv4,
+	"ip6":    nftables.TableFamilyIPv6,
+	"inet":   nftables.TableFamilyINet,
 	"bridge": nftables.TableFamilyBridge,
 	"netdev": nftables.TableFamilyNetdev,
 }
 
+func vlog(format string, args ...any) {
+	if *verbose {
+		log.Printf(format, args...)
+	}
+}
+
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: %s -d FILE [options]\nSIGHUP reloads the domain list.\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "usage: %s -d FILE [options]\n"+
+			"Each line of FILE is 'domain' for that name alone, or '*.domain' for it\n"+
+			"and every name under it, followed by the sets to fill.\n"+
+			"SIGHUP reloads the domain list.\n", os.Args[0])
 		flag.VisitAll(func(f *flag.Flag) {
 			if !strings.HasPrefix(f.Name, "assembly") {
 				fmt.Fprintf(os.Stderr, "  -%s\t%s (default %q)\n", f.Name, f.Usage, f.DefValue)

@@ -13,7 +13,10 @@ import (
 
 var domainRE = regexp.MustCompile(`^[a-z0-9_-]{1,63}(\.[a-z0-9_-]{1,63})*$`)
 
-type domain struct{ set4, set6 *nftables.Set }
+type domain struct {
+	set4, set6 *nftables.Set
+	wildcard   bool
+}
 
 func (d *daemon) loadDomains(path string) (map[string]*domain, error) {
 	f, err := os.Open(path)
@@ -64,14 +67,15 @@ func (d *daemon) loadDomains(path string) (map[string]*domain, error) {
 			return nil, fmt.Errorf("%s:%d: too many fields", path, n)
 		}
 
-		name := strings.TrimSuffix(strings.ToLower(fields[0]), ".")
+		entry := strings.TrimSuffix(strings.ToLower(fields[0]), ".")
+		name, wildcard := strings.CutPrefix(entry, "*.")
 		if len(name) > 253 || !domainRE.MatchString(name) {
-			return nil, fmt.Errorf("%s:%d: invalid domain %q", path, n, name)
+			return nil, fmt.Errorf("%s:%d: invalid domain %q", path, n, entry)
 		}
 
 		setNames := [2]string{*def4, *def6}
 		copy(setNames[:], fields[1:])
-		dom := &domain{}
+		dom := &domain{wildcard: wildcard}
 		if dom.set4, err = lookup(setNames[0], nftables.TypeIPAddr); err == nil {
 			dom.set6, err = lookup(setNames[1], nftables.TypeIP6Addr)
 		}
@@ -84,7 +88,8 @@ func (d *daemon) loadDomains(path string) (map[string]*domain, error) {
 			return nil, fmt.Errorf("%s:%d: %w", path, n, err)
 		}
 
-		if domains[name] != nil {
+		if old := domains[name]; old != nil {
+			old.wildcard = old.wildcard || wildcard
 			continue
 		}
 		domains[name] = dom
@@ -93,16 +98,19 @@ func (d *daemon) loadDomains(path string) (map[string]*domain, error) {
 }
 
 func (d *daemon) match(name string) *domain {
-	for {
-		if dom := d.domains[name]; dom != nil {
-			return dom
-		}
+	if dom := d.domains[name]; dom != nil {
+		return dom
+	}
 
-		i := strings.IndexByte(name, '.')
-		if i < 0 {
+	for {
+		_, parent, ok := strings.Cut(name, ".")
+		if !ok {
 			return nil
 		}
+		name = parent
 
-		name = name[i+1:]
+		if dom := d.domains[name]; dom != nil && dom.wildcard {
+			return dom
+		}
 	}
 }

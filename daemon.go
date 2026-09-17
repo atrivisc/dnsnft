@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"math"
 	"net"
@@ -25,16 +26,27 @@ type daemon struct {
 
 func (d *daemon) handleDNS(msg []byte) {
 	var dns layers.DNS
-	if decodeDNS(&dns, msg) != nil || !dns.QR || dns.OpCode != layers.DNSOpCodeQuery ||
-		dns.ResponseCode != layers.DNSResponseCodeNoErr || len(dns.Questions) != 1 ||
+	if err := decodeDNS(&dns, msg); err != nil {
+		vlog("ignoring a %d byte message: %v", len(msg), err)
+		return
+	}
+
+	if !dns.QR || dns.OpCode != layers.DNSOpCodeQuery || len(dns.Questions) != 1 ||
 		dns.Questions[0].Class != layers.DNSClassIN {
+		vlog("ignoring a message: response=%v opcode=%v questions=%d", dns.QR, dns.OpCode, len(dns.Questions))
 		return
 	}
 
 	lower := func(b []byte) string { return strings.ToLower(string(b)) }
 	qname := lower(dns.Questions[0].Name)
+	if dns.ResponseCode != layers.DNSResponseCodeNoErr {
+		vlog("%s: answered with %v", qname, dns.ResponseCode)
+		return
+	}
+
 	dom := d.match(qname)
 	if dom == nil {
+		vlog("%s: no matching domain in %s", qname, *domFile)
 		return
 	}
 
@@ -63,9 +75,26 @@ func (d *daemon) handleDNS(msg []byte) {
 		}
 	}
 
-	if len(add4)+len(add6) > 0 {
-		d.update(qname, []*nftables.Set{dom.set4, dom.set6}, [][]nftables.SetElement{add4, add6})
+	if len(add4)+len(add6) == 0 {
+		vlog("%s: no usable address records among %d answers", qname, len(dns.Answers))
+		return
 	}
+	d.update(qname, []*nftables.Set{dom.set4, dom.set6}, [][]nftables.SetElement{add4, add6})
+}
+
+func describe(pkt gopacket.Packet) string {
+	src, dst := "?", "?"
+	if n := pkt.NetworkLayer(); n != nil {
+		src, dst = n.NetworkFlow().Src().String(), n.NetworkFlow().Dst().String()
+	}
+	t := pkt.TransportLayer()
+	if t == nil {
+		if e := pkt.ErrorLayer(); e != nil {
+			return fmt.Sprintf("%s -> %s, cannot decode: %v", src, dst, e.Error())
+		}
+		return fmt.Sprintf("%s -> %s, no transport layer", src, dst)
+	}
+	return fmt.Sprintf("%s:%s -> %s:%s (%s)", src, t.TransportFlow().Src(), dst, t.TransportFlow().Dst(), t.LayerType())
 }
 
 func (d *daemon) handlePacket(data []byte) {
@@ -77,15 +106,19 @@ func (d *daemon) handlePacket(data []byte) {
 	pkt := gopacket.NewPacket(data, first, gopacket.DecodeOptions{Lazy: true, NoCopy: true})
 
 	switch l4 := pkt.TransportLayer().(type) {
-	case *layers.UDP:
-		if l4.SrcPort == 53 {
-			d.handleDNS(l4.Payload)
-		}
-	case *layers.TCP:
-		if l4.SrcPort == 53 && !pkt.Metadata().Truncated {
-			d.assembler.AssembleWithContext(pkt.NetworkLayer().NetworkFlow(), l4, captureTime(time.Now()))
-		}
+        case *layers.UDP:
+            if l4.SrcPort == 53 {
+                d.handleDNS(l4.Payload)
+                return
+            }
+        case *layers.TCP:
+            if l4.SrcPort == 53 && !pkt.Metadata().Truncated {
+                vlog("reassembling %d bytes of a TCP stream: %s", len(l4.Payload), describe(pkt))
+                d.assembler.AssembleWithContext(pkt.NetworkLayer().NetworkFlow(), l4, captureTime(time.Now()))
+                return
+            }
 	}
+	vlog("ignoring a queued packet: %s", describe(pkt))
 }
 
 func (d *daemon) flush() {
