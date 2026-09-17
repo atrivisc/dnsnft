@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+
+UNIT=dnsnft.service
+
+if [ "$1" = "remove" ] && [ -d /run/systemd/system ]; then
+    systemctl --system daemon-reload >/dev/null || true
+fi
+
+if [ -x /usr/bin/deb-systemd-helper ]; then
+    case "$1" in
+        remove)
+            deb-systemd-helper mask "$UNIT" >/dev/null || true
+            ;;
+        purge)
+            deb-systemd-helper purge "$UNIT" >/dev/null || true
+            deb-systemd-helper unmask "$UNIT" >/dev/null || true
+            ;;
+    esac
+fi
+
+exit 0

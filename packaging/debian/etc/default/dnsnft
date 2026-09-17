@@ -1,0 +1,6 @@
+# Options passed to dnsnft by dnsnft.service (run `dnsnft -h` for the list).
+# The domain list is always /etc/dnsnft/domains.conf.
+#
+# Example:
+#   DNSNFT_OPTS="-q 0 -F inet -t filter -4 allow4 -6 allow6"
+DNSNFT_OPTS="-q 0"

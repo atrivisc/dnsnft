@@ -56,11 +56,26 @@ jobs:
           cp README* LICENSE* dist/"$OUT"/ 2>/dev/null || true
           tar -C dist -czf dist/"$OUT".tar.gz "$OUT"
 
+      - name: Build .deb
+        env:
+          ARCH: ${{ matrix.goarch }}
+        run: |
+          VERSION="$(echo "${GITHUB_REF_NAME#v}" | tr '-' '~')"
+          ROOT="build/deb-${ARCH}"
+          mkdir -p build
+          cp -a packaging/debian "$ROOT"
+          install -D -m 0755 "dist/${BINARY_NAME}-${GITHUB_REF_NAME}-linux-${ARCH}/${BINARY_NAME}" "$ROOT/usr/bin/${BINARY_NAME}"
+          SIZE="$(du -sk --exclude=DEBIAN "$ROOT" | cut -f1)"
+          sed -i -e "s/@VERSION@/${VERSION}/" -e "s/@ARCH@/${ARCH}/" -e "s/@SIZE@/${SIZE}/" "$ROOT/DEBIAN/control"
+          dpkg-deb --build --root-owner-group "$ROOT" "dist/${BINARY_NAME}_${VERSION}_${ARCH}.deb"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: build-linux-${{ matrix.goarch }}
-          path: dist/*.tar.gz
+          path: |
+            dist/*.tar.gz
+            dist/*.deb
           if-no-files-found: error
 
   release:
@@ -77,9 +92,12 @@ jobs:
           pattern: build-*
           merge-multiple: true
 
-      - name: Generate checksums
+      - name: Generate checksums for each file
         working-directory: dist
-        run: sha256sum *.tar.gz > SHA256SUMS
+        run: |
+          for file in *.tar.gz *.deb; do
+            sha256sum "$file" >> "$file".sha256sum
+          done
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -90,4 +108,5 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             dist/*.tar.gz
-            dist/SHA256SUMS
+            dist/*.deb
+            dist/*.sha256sum

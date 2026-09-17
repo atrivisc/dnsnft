@@ -1,0 +1,14 @@
+Package: dnsnft
+Version: @VERSION@
+Architecture: @ARCH@
+Installed-Size: @SIZE@
+Maintainer: atrivisc <atrivisc@users.noreply.github.com>
+Section: net
+Priority: optional
+Depends: init-system-helpers (>= 1.54~)
+Recommends: nftables
+Homepage: https://github.com/atrivisc/dnsnft
+Description: fill nftables sets from DNS answers
+ dnsnft reads DNS responses from an NFQUEUE and adds the resolved
+ addresses of listed domains to nftables sets, with timeouts derived
+ from the record TTLs.
