@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+
+permissions:
+  contents: read
+
+env:
+  BINARY_NAME: dnsnft
+  MAIN_PACKAGE: .
+
+jobs:
+  build:
+    name: Build (linux/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    container:
+      image: debian:bookworm
+    strategy:
+      fail-fast: true
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates tar gzip
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Get dependencies
+        run: |
+          go mod download
+
+      - name: Run tests
+        run: go test -v ./...
