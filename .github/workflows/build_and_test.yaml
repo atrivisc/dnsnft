@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+
+permissions:
+  contents: read
+
+env:
+  BINARY_NAME: dnsnft
+  MAIN_PACKAGE: .
+
+jobs:
+  build:
+    name: Build (linux/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    container:
+      image: debian:bookworm
+    strategy:
+      fail-fast: true
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates tar gzip
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Get dependencies
+        run: |
+          go mod download
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Build
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          OUT="${BINARY_NAME}-${GITHUB_REF_NAME}-linux-${GOARCH}"
+          mkdir -p dist/"$OUT"
+          go build -trimpath \
+            -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+            -buildvcs=false \
+            -o dist/"$OUT"/"${BINARY_NAME}" \
+            "${MAIN_PACKAGE}"
+          cp README* LICENSE* dist/"$OUT"/ 2>/dev/null || true
+          tar -C dist -czf dist/"$OUT".tar.gz "$OUT"
+
+      - name: Build .deb
+        env:
+          ARCH: ${{ matrix.goarch }}
+        run: |
+          VERSION="$(echo "${GITHUB_REF_NAME#v}" | tr '-' '~')"
+          ROOT="build/deb-${ARCH}"
+          mkdir -p build
+          cp -a packaging/debian "$ROOT"
+
+          find "$ROOT" -type d -exec chmod 0755 {} +
+          find "$ROOT" -type f -exec chmod 0644 {} +
+          for s in preinst postinst prerm postrm config; do
+            [ -f "$ROOT/DEBIAN/$s" ] && chmod 0755 "$ROOT/DEBIAN/$s"
+          done
+
+          install -D -m 0755 "dist/${BINARY_NAME}-${GITHUB_REF_NAME}-linux-${ARCH}/${BINARY_NAME}" "$ROOT/usr/bin/${BINARY_NAME}"
+          SIZE="$(du -sk --exclude=DEBIAN "$ROOT" | cut -f1)"
+          sed -i -e "s/@VERSION@/${VERSION}/" -e "s/@ARCH@/${ARCH}/" -e "s/@SIZE@/${SIZE}/" "$ROOT/DEBIAN/control"
+          dpkg-deb --build --root-owner-group "$ROOT" "dist/${BINARY_NAME}_${VERSION}_${ARCH}.deb"
