@@ -64,10 +64,18 @@ jobs:
           ROOT="build/deb-${ARCH}"
           mkdir -p build
           cp -a packaging/debian "$ROOT"
+
+          find "$ROOT" -type d -exec chmod 0755 {} +
+          find "$ROOT" -type f -exec chmod 0644 {} +
+          for s in preinst postinst prerm postrm config; do
+            [ -f "$ROOT/DEBIAN/$s" ] && chmod 0755 "$ROOT/DEBIAN/$s"
+          done
+
           install -D -m 0755 "dist/${BINARY_NAME}-${GITHUB_REF_NAME}-linux-${ARCH}/${BINARY_NAME}" "$ROOT/usr/bin/${BINARY_NAME}"
           SIZE="$(du -sk --exclude=DEBIAN "$ROOT" | cut -f1)"
           sed -i -e "s/@VERSION@/${VERSION}/" -e "s/@ARCH@/${ARCH}/" -e "s/@SIZE@/${SIZE}/" "$ROOT/DEBIAN/control"
           dpkg-deb --build --root-owner-group "$ROOT" "dist/${BINARY_NAME}_${VERSION}_${ARCH}.deb"
+
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
