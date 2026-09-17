@@ -36,6 +36,10 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Get dependencies
+        run: |
+          go mod download
+
       - name: Build
         env:
           GOOS: linux
