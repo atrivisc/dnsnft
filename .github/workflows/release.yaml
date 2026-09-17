@@ -50,6 +50,7 @@ jobs:
           mkdir -p dist/"$OUT"
           go build -trimpath \
             -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+            -buildvcs=false \
             -o dist/"$OUT"/"${BINARY_NAME}" \
             "${MAIN_PACKAGE}"
           cp README* LICENSE* dist/"$OUT"/ 2>/dev/null || true
