@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -33,6 +34,9 @@ func readQueueStats(proc string, num uint16) (st queueStats, ok bool, err error)
 			if v[i], err = strconv.ParseUint(f[i], 10, 64); err != nil {
 				return st, false, fmt.Errorf("parsing %q: %w", line, err)
 			}
+		}
+		if v[1] > math.MaxUint32 {
+			return st, false, fmt.Errorf("parsing %q: netlink port %d overflows uint32", line, v[1])
 		}
 		return queueStats{port: uint32(v[1]), waiting: v[2], dropped: v[5], userDropped: v[6], queued: v[7]}, true, nil
 	}
