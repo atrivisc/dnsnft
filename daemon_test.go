@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	nfqueue "github.com/florianl/go-nfqueue/v2"
+	"github.com/florianl/go-nfqueue/v2"
 	"github.com/google/nftables"
 )
 

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -15,6 +16,7 @@ var domainRE = regexp.MustCompile(`^[a-z0-9_-]{1,63}(\.[a-z0-9_-]{1,63})*$`)
 
 type domain struct {
 	set4, set6 *nftables.Set
+	name       string
 	wildcard   bool
 }
 
@@ -24,7 +26,12 @@ func (d *daemon) loadDomains(path string) (map[string]*domain, error) {
 		return nil, err
 	}
 
-	defer f.Close()
+	defer func(f *os.File) {
+		err := f.Close()
+		if err != nil {
+			log.Printf("error closing file: %v", err)
+		}
+	}(f)
 
 	sets := map[string]*nftables.Set{}
 	lookup := func(name string, want nftables.SetDatatype) (*nftables.Set, error) {
@@ -75,7 +82,7 @@ func (d *daemon) loadDomains(path string) (map[string]*domain, error) {
 
 		setNames := [2]string{d.cfg.def4, d.cfg.def6}
 		copy(setNames[:], fields[1:])
-		dom := &domain{wildcard: wildcard}
+		dom := &domain{name: name, wildcard: wildcard}
 		if dom.set4, err = lookup(setNames[0], nftables.TypeIPAddr); err == nil {
 			dom.set6, err = lookup(setNames[1], nftables.TypeIP6Addr)
 		}
@@ -95,6 +102,10 @@ func (d *daemon) loadDomains(path string) (map[string]*domain, error) {
 		domains[name] = dom
 	}
 	return domains, sc.Err()
+}
+
+func under(name, zone string) bool {
+	return name == zone || strings.HasSuffix(name, "."+zone)
 }
 
 func (d *daemon) match(name string) *domain {

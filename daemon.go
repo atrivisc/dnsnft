@@ -7,13 +7,14 @@ import (
 	"log"
 	"math"
 	"net"
+	"net/netip"
 	"os"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	nfqueue "github.com/florianl/go-nfqueue/v2"
+	"github.com/florianl/go-nfqueue/v2"
 	"github.com/google/nftables"
 	"github.com/gopacket/gopacket"
 	"github.com/gopacket/gopacket/layers"
@@ -21,13 +22,16 @@ import (
 )
 
 type config struct {
-	domFile string
-	def4    string
-	def6    string
-	extra   time.Duration
-	maxTTL  time.Duration
-	dryRun  bool
-	verbose bool
+	domFile  string
+	def4     string
+	def6     string
+	extra    time.Duration
+	maxTTL   time.Duration
+	dryRun   bool
+	verbose  bool
+	permit   []netip.Prefix
+	block    []netip.Prefix
+	sameZone bool
 }
 
 type setConn interface {
@@ -133,11 +137,19 @@ func (d *daemon) handleDNS(msg []byte) {
 	for grew := true; grew && len(chain) < 16; {
 		grew = false
 		for _, rr := range dns.Answers {
-			if rr.Type == layers.DNSTypeCNAME && rr.Class == layers.DNSClassIN &&
-				chain[lower(rr.Name)] && !chain[lower(rr.CNAME)] {
-				chain[lower(rr.CNAME)] = true
-				grew = true
+			if rr.Type != layers.DNSTypeCNAME || rr.Class != layers.DNSClassIN {
+				continue
 			}
+			target := lower(rr.CNAME)
+			if !chain[lower(rr.Name)] || chain[target] {
+				continue
+			}
+			if d.cfg.sameZone && !under(target, dom.name) {
+				d.logf("%q: not following the CNAME to %q, outside %q", qname, target, dom.name)
+				continue
+			}
+			chain[target] = true
+			grew = true
 		}
 	}
 
@@ -146,11 +158,25 @@ func (d *daemon) handleDNS(msg []byte) {
 		if rr.Class != layers.DNSClassIN || !chain[lower(rr.Name)] {
 			continue
 		}
+
+		var v6 bool
 		switch {
 		case rr.Type == layers.DNSTypeA && len(rr.IP) == 4 && dom.set4 != nil:
-			add4 = d.addElem(add4, rr.IP, rr.TTL)
 		case rr.Type == layers.DNSTypeAAAA && len(rr.IP) == 16 && dom.set6 != nil:
+			v6 = true
+		default:
+			continue
+		}
+
+		if p, bad := d.blocked(rr.IP); bad {
+			d.logf("%q: refusing %s from %q (%s)", qname, rr.IP, lower(rr.Name), p)
+			continue
+		}
+
+		if v6 {
 			add6 = d.addElem(add6, rr.IP, rr.TTL)
+		} else {
+			add4 = d.addElem(add4, rr.IP, rr.TTL)
 		}
 	}
 
@@ -159,6 +185,24 @@ func (d *daemon) handleDNS(msg []byte) {
 		return
 	}
 	d.update(qname, []*nftables.Set{dom.set4, dom.set6}, [][]nftables.SetElement{add4, add6})
+}
+
+func (d *daemon) blocked(ip []byte) (netip.Prefix, bool) {
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok || addr.Is4In6() {
+		return netip.Prefix{}, true
+	}
+	for _, p := range d.cfg.permit {
+		if p.Contains(addr) {
+			return netip.Prefix{}, false
+		}
+	}
+	for _, p := range d.cfg.block {
+		if p.Contains(addr) {
+			return p, true
+		}
+	}
+	return netip.Prefix{}, false
 }
 
 func describe(pkt gopacket.Packet) string {
