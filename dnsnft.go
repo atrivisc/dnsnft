@@ -29,7 +29,7 @@ var (
 	maxTTL       = flag.Duration("M", 24*time.Hour, "longest TTL taken from an answer, before -g is added")
 	dryRun       = flag.Bool("n", false, "log additions instead of changing sets")
 	verbose      = flag.Bool("v", false, "log every address added")
-	sameZone     = flag.Bool("C", true, "only follow CNAMEs that stay under the matched domain")
+	sameZone     = flag.Bool("C", false, "only follow CNAMEs that stay under the matched domain")
 	setSizeLimit = flag.Int("S", 100, "limits the amount of ips parsed in a response with multiple ips. Responses over this limit will be ignored")
 	block        prefixList
 	permit       prefixList
