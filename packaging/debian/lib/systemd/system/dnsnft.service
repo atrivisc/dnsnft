@@ -10,12 +10,28 @@ ExecStart=/usr/bin/dnsnft -d /etc/dnsnft/domains.conf $DNSNFT_OPTS
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
-
 CapabilityBoundingSet=CAP_NET_ADMIN
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
+User=dnsnft
+DynamicUser=yes
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+RestrictAddressFamilies=AF_NETLINK
+IPAddressDeny=any
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+ProtectProc=invisible
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target
