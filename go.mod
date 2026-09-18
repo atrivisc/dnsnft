@@ -1,6 +1,6 @@
 module dnsnft
 
-go 1.27.1
+go 1.27
 
 require (
 	github.com/florianl/go-nfqueue/v2 v2.1.0

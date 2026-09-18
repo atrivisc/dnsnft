@@ -19,19 +19,20 @@ import (
 )
 
 var (
-	queueNum = flag.Uint("q", 0, "NFQUEUE number")
-	family   = flag.String("F", "inet", "table family: ip, ip6, inet, bridge or netdev")
-	table    = flag.String("t", "filter", "table containing the sets")
-	def4     = flag.String("4", "", "default IPv4 set")
-	def6     = flag.String("6", "", "default IPv6 set")
-	domFile  = flag.String("d", "", "domain list: '[*.]domain [ipv4-set [ipv6-set]]' per line, '-' = none")
-	extra    = flag.Duration("g", 48*time.Hour, "added to each answer's TTL to give the element timeout")
-	maxTTL   = flag.Duration("M", 24*time.Hour, "longest TTL taken from an answer, before -g is added")
-	dryRun   = flag.Bool("n", false, "log additions instead of changing sets")
-	verbose  = flag.Bool("v", false, "log every address added")
-	sameZone = flag.Bool("C", true, "only follow CNAMEs that stay under the matched domain")
-	block    prefixList
-	permit   prefixList
+	queueNum     = flag.Uint("q", 0, "NFQUEUE number")
+	family       = flag.String("F", "inet", "table family: ip, ip6, inet, bridge or netdev")
+	table        = flag.String("t", "filter", "table containing the sets")
+	def4         = flag.String("4", "", "default IPv4 set")
+	def6         = flag.String("6", "", "default IPv6 set")
+	domFile      = flag.String("d", "", "domain list: '[*.]domain [ipv4-set [ipv6-set]]' per line, '-' = none")
+	extra        = flag.Duration("g", 48*time.Hour, "added to each answer's TTL to give the element timeout")
+	maxTTL       = flag.Duration("M", 24*time.Hour, "longest TTL taken from an answer, before -g is added")
+	dryRun       = flag.Bool("n", false, "log additions instead of changing sets")
+	verbose      = flag.Bool("v", false, "log every address added")
+	sameZone     = flag.Bool("C", true, "only follow CNAMEs that stay under the matched domain")
+	setSizeLimit = flag.Int("S", 100, "limits the amount of ips parsed in a response with multiple ips. Responses over this limit will be ignored")
+	block        prefixList
+	permit       prefixList
 )
 
 var families = map[string]nftables.TableFamily{
@@ -128,16 +129,17 @@ func main() {
 	}
 
 	cfg := config{
-		domFile:  *domFile,
-		def4:     *def4,
-		def6:     *def6,
-		extra:    *extra,
-		maxTTL:   *maxTTL,
-		dryRun:   *dryRun,
-		verbose:  *verbose,
-		sameZone: *sameZone,
-		permit:   permit.ps,
-		block:    block.ps,
+		domFile:      *domFile,
+		def4:         *def4,
+		def6:         *def6,
+		extra:        *extra,
+		maxTTL:       *maxTTL,
+		dryRun:       *dryRun,
+		verbose:      *verbose,
+		sameZone:     *sameZone,
+		setSizeLimit: *setSizeLimit,
+		permit:       permit.ps,
+		block:        block.ps,
 	}
 	d := newDaemon(cfg, &nftables.Table{Name: *table, Family: fam})
 	var daemonErr error

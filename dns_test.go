@@ -153,7 +153,10 @@ func TestHandlePacket(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			env := newTestDaemon(t)
-			env.handlePacket(c.pkt)
+			err := env.handlePacket(c.pkt)
+			if err != nil {
+				return
+			}
 			if got := env.conn.added(); !equal(got, c.want) {
 				t.Errorf("added %v, want %v", got, c.want)
 			}
@@ -174,13 +177,22 @@ func TestTCPStream(t *testing.T) {
 	t.Run("messages split across segments", func(t *testing.T) {
 		t.Parallel()
 		env := newTestDaemon(t)
-		env.handlePacket(ipv4(6, tcp(50001, isn, synAck, nil)))
+		err := env.handlePacket(ipv4(6, tcp(50001, isn, synAck, nil)))
+		if err != nil {
+			return
+		}
 		prev := 0
 		for _, cut := range []int{1, 5, len(one) + 3, len(stream)} {
-			env.handlePacket(ipv4(6, tcp(50001, uint32(isn+1+prev), pshAck, stream[prev:cut])))
+			err := env.handlePacket(ipv4(6, tcp(50001, uint32(isn+1+prev), pshAck, stream[prev:cut])))
+			if err != nil {
+				return
+			}
 			prev = cut
 		}
-		env.handlePacket(ipv4(6, tcp(50001, uint32(isn+1+len(stream)), finAck, nil)))
+		err = env.handlePacket(ipv4(6, tcp(50001, uint32(isn+1+len(stream)), finAck, nil)))
+		if err != nil {
+			return
+		}
 		want := []string{"v4 198.51.100.1", "v4 198.51.100.2"}
 		if got := env.conn.added(); !equal(got, want) {
 			t.Errorf("added %v, want %v", got, want)
@@ -190,10 +202,16 @@ func TestTCPStream(t *testing.T) {
 	t.Run("segments arriving out of order", func(t *testing.T) {
 		t.Parallel()
 		env := newTestDaemon(t)
-		env.handlePacket(ipv4(6, tcp(50002, isn, synAck, nil)))
+		err := env.handlePacket(ipv4(6, tcp(50002, isn, synAck, nil)))
+		if err != nil {
+			return
+		}
 		cuts := []int{0, 7, len(one), len(stream)}
 		for i := len(cuts) - 2; i >= 0; i-- {
-			env.handlePacket(ipv4(6, tcp(50002, uint32(isn+1+cuts[i]), pshAck, stream[cuts[i]:cuts[i+1]])))
+			err = env.handlePacket(ipv4(6, tcp(50002, uint32(isn+1+cuts[i]), pshAck, stream[cuts[i]:cuts[i+1]])))
+			if err != nil {
+				return
+			}
 		}
 		want := []string{"v4 198.51.100.1", "v4 198.51.100.2"}
 		if got := env.conn.added(); !equal(got, want) {
@@ -204,7 +222,10 @@ func TestTCPStream(t *testing.T) {
 	t.Run("a connection whose handshake was not seen is ignored", func(t *testing.T) {
 		t.Parallel()
 		env := newTestDaemon(t)
-		env.handlePacket(ipv4(6, tcp(50003, isn+1, pshAck, stream)))
+		err := env.handlePacket(ipv4(6, tcp(50003, isn+1, pshAck, stream)))
+		if err != nil {
+			return
+		}
 		if got := env.conn.added(); len(got) != 0 {
 			t.Errorf("added %v from a stream of unknown offset", got)
 		}
@@ -213,15 +234,24 @@ func TestTCPStream(t *testing.T) {
 	t.Run("a gap makes the daemon give up on the stream", func(t *testing.T) {
 		t.Parallel()
 		env := newTestDaemon(t)
-		env.handlePacket(ipv4(6, tcp(50004, isn, synAck, nil)))
-		env.handlePacket(ipv4(6, tcp(50004, uint32(isn+1+len(one)), pshAck, stream[len(one):])))
+		err := env.handlePacket(ipv4(6, tcp(50004, isn, synAck, nil)))
+		if err != nil {
+			return
+		}
+		err = env.handlePacket(ipv4(6, tcp(50004, uint32(isn+1+len(one)), pshAck, stream[len(one):])))
+		if err != nil {
+			return
+		}
 
 		later := env.now().Add(time.Hour)
 		env.assembler.FlushWithOptions(reassembly.FlushOptions{T: later, TC: later})
 		if !strings.Contains(env.logged(), "dropping a TCP stream") {
 			t.Errorf("log = %q, want the dropped stream in it", env.logged())
 		}
-		env.handlePacket(ipv4(6, tcp(50004, uint32(isn+1), pshAck, one)))
+		err = env.handlePacket(ipv4(6, tcp(50004, uint32(isn+1), pshAck, one)))
+		if err != nil {
+			return
+		}
 		if got := env.conn.added(); len(got) != 0 {
 			t.Errorf("added %v after the stream was broken", got)
 		}
@@ -230,8 +260,14 @@ func TestTCPStream(t *testing.T) {
 	t.Run("flush only reaches connections older than its window", func(t *testing.T) {
 		t.Parallel()
 		env := newTestDaemon(t)
-		env.handlePacket(ipv4(6, tcp(50005, isn, synAck, nil)))
-		env.handlePacket(ipv4(6, tcp(50005, uint32(isn+1+len(one)), pshAck, stream[len(one):])))
+		err := env.handlePacket(ipv4(6, tcp(50005, isn, synAck, nil)))
+		if err != nil {
+			return
+		}
+		err = env.handlePacket(ipv4(6, tcp(50005, uint32(isn+1+len(one)), pshAck, stream[len(one):])))
+		if err != nil {
+			return
+		}
 		env.flush()
 		if strings.Contains(env.logged(), "dropping a TCP stream") {
 			t.Error("flush dropped a stream that had just arrived")

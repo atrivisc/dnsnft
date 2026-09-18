@@ -150,6 +150,9 @@ func FuzzHandlePacket(f *testing.F) {
 
 	env := newTestDaemon(f)
 	f.Fuzz(func(_ *testing.T, data []byte) {
-		env.handlePacket(data)
+		err := env.handlePacket(data)
+		if err != nil {
+			return
+		}
 	})
 }

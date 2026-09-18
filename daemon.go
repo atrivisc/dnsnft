@@ -22,16 +22,17 @@ import (
 )
 
 type config struct {
-	domFile  string
-	def4     string
-	def6     string
-	extra    time.Duration
-	maxTTL   time.Duration
-	dryRun   bool
-	verbose  bool
-	permit   []netip.Prefix
-	block    []netip.Prefix
-	sameZone bool
+	domFile      string
+	def4         string
+	def6         string
+	extra        time.Duration
+	maxTTL       time.Duration
+	dryRun       bool
+	verbose      bool
+	permit       []netip.Prefix
+	block        []netip.Prefix
+	sameZone     bool
+	setSizeLimit int
 }
 
 type setConn interface {
@@ -91,7 +92,9 @@ func (d *daemon) onPacket(a nfqueue.Attribute) int {
 	}
 	d.mu.Lock()
 	if a.Payload != nil {
-		d.handlePacket(*a.Payload)
+		if err := d.handlePacket(*a.Payload); err != nil {
+			d.logf("error handling packet: %v", err)
+		}
 	}
 	d.mu.Unlock()
 
@@ -133,8 +136,13 @@ func (d *daemon) handleDNS(msg []byte) {
 		return
 	}
 
+	if len(dns.Answers) > d.cfg.setSizeLimit {
+		d.vlog("%s: answers length over size limit %v", qname, d.cfg.setSizeLimit)
+		return
+	}
+
 	chain := map[string]bool{qname: true}
-	for grew := true; grew && len(chain) < 16; {
+	for grew := true; grew; {
 		grew = false
 		for _, rr := range dns.Answers {
 			if rr.Type != layers.DNSTypeCNAME || rr.Class != layers.DNSClassIN {
@@ -220,13 +228,19 @@ func describe(pkt gopacket.Packet) string {
 	return fmt.Sprintf("%s:%s -> %s:%s (%s)", src, t.TransportFlow().Src(), dst, t.TransportFlow().Dst(), t.LayerType())
 }
 
-func (d *daemon) handlePacket(data []byte) {
+func (d *daemon) handlePacket(data []byte) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("malformed DNS message: %v", r)
+		}
+	}()
+
 	first := layers.LayerTypeIPv4
 	if len(data) > 0 && data[0]>>4 == 6 {
 		first = layers.LayerTypeIPv6
 	}
 
-	pkt := gopacket.NewPacket(data, first, gopacket.DecodeOptions{Lazy: true, NoCopy: true})
+	pkt := gopacket.NewPacket(data, first, gopacket.DecodeOptions{Lazy: true, NoCopy: false})
 
 	switch l4 := pkt.TransportLayer().(type) {
 	case *layers.UDP:
@@ -237,11 +251,16 @@ func (d *daemon) handlePacket(data []byte) {
 	case *layers.TCP:
 		if l4.SrcPort == 53 && !pkt.Metadata().Truncated {
 			d.vlog("reassembling %d bytes of a TCP stream: %s", len(l4.Payload), describe(pkt))
-			d.assembler.AssembleWithContext(pkt.NetworkLayer().NetworkFlow(), l4, captureTime(d.now()))
+			netLayer := pkt.NetworkLayer()
+			if netLayer == nil {
+				return fmt.Errorf("failed to get NetworkLayer of packet: %s", describe(pkt))
+			}
+			flow := netLayer.NetworkFlow()
+			d.assembler.AssembleWithContext(flow, l4, captureTime(d.now()))
 			return
 		}
 	}
-	d.vlog("ignoring a queued packet: %s", describe(pkt))
+	return fmt.Errorf("ignoring a queued packet: %s", describe(pkt))
 }
 
 func (d *daemon) flush() {

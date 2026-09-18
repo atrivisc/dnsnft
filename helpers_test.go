@@ -100,15 +100,21 @@ func (e errorString) Error() string { return string(e) }
 
 type testEnv struct {
 	*daemon
-	conn *fakeConn
-	logs *bytes.Buffer
+	conn    *fakeConn
+	logs    *bytes.Buffer
 	dialed  int
 	dialErr error
 }
 
 func newTestDaemon(t testing.TB, opts ...func(*config)) *testEnv {
 	t.Helper()
-	cfg := config{domFile: "domains.conf", extra: 48 * time.Hour, maxTTL: 24 * time.Hour, verbose: true}
+	cfg := config{
+		domFile:      "domains.conf",
+		extra:        48 * time.Hour,
+		maxTTL:       24 * time.Hour,
+		verbose:      true,
+		setSizeLimit: 100,
+	}
 	for _, o := range opts {
 		o(&cfg)
 	}
