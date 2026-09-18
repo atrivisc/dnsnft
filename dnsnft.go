@@ -204,8 +204,7 @@ func main() {
 		case <-ctx.Done():
 			return
 		case err := <-d.fatal:
-			log.Printf("nfqueue: %v", err)
-			return
+			log.Fatalf("nfqueue: %v", err)
 		case <-hup:
 			d.reload()
 		case <-tick.C:

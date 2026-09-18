@@ -92,21 +92,21 @@ own.
 
 ## Options
 
-| Flag | Default | Meaning |
-| --- | --- | --- |
-| `-d FILE` | required | domain list |
-| `-q N` | 0 | queue number, must match the rule |
-| `-F FAMILY` | inet | family of the table holding the sets |
-| `-t NAME` | filter | table holding the sets |
-| `-4 SET` / `-6 SET` | none | sets used for entries that name none |
-| `-g DURATION` | 48h | added to the TTL to get the element timeout |
-| `-M DURATION` | 24h | longest TTL taken from an answer, before `-g` |
-| `-C` | true | only follow CNAMEs that stay under the matched domain |
-| `-S N` | 100 | ignore replies carrying more than this many answers |
-| `-X CIDR[,CIDR]` | bogons | addresses to refuse, repeatable |
-| `-A CIDR[,CIDR]` | none | exceptions to `-X`, repeatable |
-| `-n` | off | log what would be added, change nothing |
-| `-v` | off | log every packet, including the ones ignored and why |
+| Flag                | Default  | Meaning                                               |
+|---------------------|----------|-------------------------------------------------------|
+| `-d FILE`           | required | domain list                                           |
+| `-q N`              | 0        | queue number, must match the rule                     |
+| `-F FAMILY`         | inet     | family of the table holding the sets                  |
+| `-t NAME`           | filter   | table holding the sets                                |
+| `-4 SET` / `-6 SET` | none     | sets used for entries that name none                  |
+| `-g DURATION`       | 48h      | added to the TTL to get the element timeout           |
+| `-M DURATION`       | 24h      | longest TTL taken from an answer, before `-g`         |
+| `-C`                | true     | only follow CNAMEs that stay under the matched domain |
+| `-S N`              | 100      | ignore replies carrying more than this many answers   |
+| `-X CIDR[,CIDR]`    | bogons   | addresses to refuse, repeatable                       |
+| `-A CIDR[,CIDR]`    | none     | exceptions to `-X`, repeatable                        |
+| `-n`                | off      | log what would be added, change nothing               |
+| `-v`                | off      | log every packet, including the ones ignored and why  |
 
 ## Timeouts
 
