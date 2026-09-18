@@ -463,9 +463,6 @@ func TestSameZoneUsesTheListedNameNotTheQuestion(t *testing.T) {
 	}
 }
 
-// TestFlagDefaults pins the defaults that decide whether a stock install
-// follows CDN-style CNAMEs and whether it blocks anything at all, so that
-// changing either is a deliberate edit rather than a side effect.
 func TestFlagDefaults(t *testing.T) {
 	t.Parallel()
 	f := flag.Lookup("C")

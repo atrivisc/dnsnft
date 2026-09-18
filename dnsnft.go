@@ -195,14 +195,6 @@ func main() {
 		netns = "unknown"
 	}
 	log.Printf("listening on queue %d (netlink port %d, network namespace %s)", *queueNum, nf.Con.PID(), netns)
-	mon := &queueMonitor{
-		num:     uint16(*queueNum),
-		port:    nf.Con.PID(),
-		proc:    procQueueStats,
-		verbose: cfg.verbose,
-		logger:  log.Default(),
-	}
-	mon.check()
 
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
@@ -218,7 +210,6 @@ func main() {
 			d.reload()
 		case <-tick.C:
 			d.flush()
-			mon.check()
 		}
 	}
 }
