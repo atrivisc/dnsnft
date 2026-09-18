@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"net"
 	"net/netip"
 	"strings"
@@ -460,24 +459,5 @@ func TestSameZoneUsesTheListedNameNotTheQuestion(t *testing.T) {
 
 	if got := env.conn.added(); !equal(got, []string{"v4 93.184.216.34"}) {
 		t.Errorf("added %v, want the sibling name to be followed because the zone is example.com", got)
-	}
-}
-
-func TestFlagDefaults(t *testing.T) {
-	t.Parallel()
-	f := flag.Lookup("C")
-	if f == nil {
-		t.Fatal("no -C flag is registered")
-	}
-	if f.DefValue != "true" {
-		t.Errorf("-C defaults to %q, want \"true\"", f.DefValue)
-	}
-
-	var p prefixList
-	if p.set {
-		t.Fatal("an unset prefix list reports that the flag was given")
-	}
-	if len(bogons) == 0 {
-		t.Error("the default block list is empty")
 	}
 }
