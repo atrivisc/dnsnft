@@ -49,7 +49,7 @@ type daemon struct {
 
 	mu        sync.Mutex
 	nft       setConn
-	domains   map[string]*domain
+	domains   domainList
 	assembler *reassembly.Assembler
 
 	dial   func() (setConn, error)
@@ -130,7 +130,7 @@ func (d *daemon) handleDNS(msg []byte) {
 		d.vlog("%s: answered with %v", qname, dns.ResponseCode)
 		return
 	}
-	dom := d.match(qname)
+	dom, zone := d.match(qname)
 	if dom == nil {
 		d.vlog("%s: no matching domain in %s", qname, d.cfg.domFile)
 		return
@@ -152,8 +152,8 @@ func (d *daemon) handleDNS(msg []byte) {
 			if !chain[lower(rr.Name)] || chain[target] {
 				continue
 			}
-			if d.cfg.sameZone && !under(target, dom.name) {
-				d.logf("%q: not following the CNAME to %q, outside %q", qname, target, dom.name)
+			if d.cfg.sameZone && !under(target, zone) {
+				d.logf("%q: not following the CNAME to %q, outside %q", qname, target, zone)
 				continue
 			}
 			chain[target] = true
@@ -276,11 +276,11 @@ func (d *daemon) reload() {
 	defer d.mu.Unlock()
 	domains, err := d.loadDomains(d.cfg.domFile)
 	if err != nil {
-		d.logf("reload failed, keeping %d domains: %v", len(d.domains), err)
+		d.logf("reload failed, keeping %d domains: %v", d.domains.len(), err)
 		return
 	}
 	d.domains = domains
-	d.logf("loaded %d domains", len(domains))
+	d.logf("loaded %d domains", domains.len())
 }
 
 func (d *daemon) reconnect() {

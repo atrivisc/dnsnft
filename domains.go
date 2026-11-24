@@ -12,18 +12,46 @@ import (
 	"github.com/google/nftables"
 )
 
-var domainRE = regexp.MustCompile(`^[a-z0-9_-]{1,63}(\.[a-z0-9_-]{1,63})*$`)
+var labelRE = regexp.MustCompile(`^[a-z0-9_*-]{1,63}$`)
 
 type domain struct {
 	set4, set6 *nftables.Set
 	name       string
 	wildcard   bool
+	pattern    []string
 }
 
-func (d *daemon) loadDomains(path string) (map[string]*domain, error) {
+type domainList struct {
+	names map[string]*domain
+	globs []*domain
+}
+
+func (l domainList) len() int {
+    return len(l.names) + len(l.globs)
+}
+
+func parseName(name string) (glob, ok bool) {
+	if len(name) > 253 {
+		return false, false
+	}
+	for _, label := range strings.Split(name, ".") {
+		if !labelRE.MatchString(label) {
+			return false, false
+		}
+		if strings.Contains(label, "*") {
+			if strings.Trim(label, "*") == "" {
+				return false, false
+			}
+			glob = true
+		}
+	}
+	return glob, true
+}
+
+func (d *daemon) loadDomains(path string) (domainList, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return domainList{}, err
 	}
 
 	defer func(f *os.File) {
@@ -60,7 +88,8 @@ func (d *daemon) loadDomains(path string) (map[string]*domain, error) {
 		return s, nil
 	}
 
-	domains := map[string]*domain{}
+	list := domainList{names: map[string]*domain{}}
+	globs := map[string]*domain{}
 	sc := bufio.NewScanner(f)
 
 	for n := 1; sc.Scan(); n++ {
@@ -71,18 +100,22 @@ func (d *daemon) loadDomains(path string) (map[string]*domain, error) {
 		}
 
 		if len(fields) > 3 {
-			return nil, fmt.Errorf("%s:%d: too many fields", path, n)
+			return domainList{}, fmt.Errorf("%s:%d: too many fields", path, n)
 		}
 
 		entry := strings.TrimSuffix(strings.ToLower(fields[0]), ".")
 		name, wildcard := strings.CutPrefix(entry, "*.")
-		if len(name) > 253 || !domainRE.MatchString(name) {
-			return nil, fmt.Errorf("%s:%d: invalid domain %q", path, n, entry)
+		glob, ok := parseName(name)
+		if !ok {
+			return domainList{}, fmt.Errorf("%s:%d: invalid domain %q", path, n, entry)
 		}
 
 		setNames := [2]string{d.cfg.def4, d.cfg.def6}
 		copy(setNames[:], fields[1:])
 		dom := &domain{name: name, wildcard: wildcard}
+		if glob {
+			dom.pattern = strings.Split(name, ".")
+		}
 		if dom.set4, err = lookup(setNames[0], nftables.TypeIPAddr); err == nil {
 			dom.set6, err = lookup(setNames[1], nftables.TypeIP6Addr)
 		}
@@ -92,36 +125,90 @@ func (d *daemon) loadDomains(path string) (map[string]*domain, error) {
 		}
 
 		if err != nil {
-			return nil, fmt.Errorf("%s:%d: %w", path, n, err)
+			return domainList{}, fmt.Errorf("%s:%d: %w", path, n, err)
 		}
 
-		if old := domains[name]; old != nil {
+		seen := list.names
+		if glob {
+			seen = globs
+		}
+		if old := seen[name]; old != nil {
 			old.wildcard = old.wildcard || wildcard
 			continue
 		}
-		domains[name] = dom
+		seen[name] = dom
+		if glob {
+			list.globs = append(list.globs, dom)
+		}
 	}
-	return domains, sc.Err()
+	if err := sc.Err(); err != nil {
+		return domainList{}, err
+	}
+	return list, nil
 }
 
 func under(name, zone string) bool {
 	return name == zone || strings.HasSuffix(name, "."+zone)
 }
 
-func (d *daemon) match(name string) *domain {
-	if dom := d.domains[name]; dom != nil {
-		return dom
-	}
-
-	for {
-		_, parent, ok := strings.Cut(name, ".")
-		if !ok {
-			return nil
+func (d *daemon) match(name string) (*domain, string) {
+	for zone, exact := name, true; ; exact = false {
+		if dom := d.domains.names[zone]; dom != nil && (exact || dom.wildcard) {
+			return dom, zone
 		}
-		name = parent
+		if dom := d.domains.matchGlob(zone, exact); dom != nil {
+			return dom, zone
+		}
 
-		if dom := d.domains[name]; dom != nil && dom.wildcard {
+		_, parent, ok := strings.Cut(zone, ".")
+		if !ok {
+			return nil, ""
+		}
+		zone = parent
+	}
+}
+
+func (l domainList) matchGlob(name string, exact bool) *domain {
+	if len(l.globs) == 0 {
+		return nil
+	}
+	labels := strings.Split(name, ".")
+	for _, dom := range l.globs {
+		if (exact || dom.wildcard) && matchLabels(dom.pattern, labels) {
 			return dom
 		}
 	}
+	return nil
+}
+
+func matchLabels(pattern, labels []string) bool {
+	if len(pattern) != len(labels) {
+		return false
+	}
+	for i, p := range pattern {
+		if !matchLabel(p, labels[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func matchLabel(pat, s string) bool {
+	parts := strings.Split(pat, "*")
+	if len(parts) == 1 {
+		return pat == s
+	}
+	first, last := parts[0], parts[len(parts)-1]
+	if len(s) < len(first)+len(last) || !strings.HasPrefix(s, first) || !strings.HasSuffix(s, last) {
+		return false
+	}
+	s = s[len(first) : len(s)-len(last)]
+	for _, p := range parts[1 : len(parts)-1] {
+		i := strings.Index(s, p)
+		if i < 0 {
+			return false
+		}
+		s = s[i+len(p):]
+	}
+	return true
 }

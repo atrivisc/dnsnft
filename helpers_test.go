@@ -130,11 +130,11 @@ func newTestDaemon(t testing.TB, opts ...func(*config)) *testEnv {
 		}
 		return newFakeConn(), nil
 	}
-	env.domains = map[string]*domain{
-		"example.com":   {set4: env.conn.sets["v4"], set6: env.conn.sets["v6"], wildcard: true},
-		"v4only.test":   {set4: env.conn.sets["v4"]},
-		"exact.example": {set4: env.conn.sets["v4"], set6: env.conn.sets["v6"]},
-	}
+	env.domains = domainList{names: map[string]*domain{
+		"example.com":   {name: "example.com", set4: env.conn.sets["v4"], set6: env.conn.sets["v6"], wildcard: true},
+		"v4only.test":   {name: "v4only.test", set4: env.conn.sets["v4"]},
+		"exact.example": {name: "exact.example", set4: env.conn.sets["v4"], set6: env.conn.sets["v6"]},
+	}}
 	return env
 }
 

@@ -461,3 +461,30 @@ func TestSameZoneUsesTheListedNameNotTheQuestion(t *testing.T) {
 		t.Errorf("added %v, want the sibling name to be followed because the zone is example.com", got)
 	}
 }
+
+func TestSameZoneOfAPatternIsTheMatchedName(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name, entry, qname, target string
+		want                       []string
+	}{
+		{"a name under the matched one is followed", "ex*.example.com", "ex1.example.com", "edge.ex1.example.com", []string{"v4 93.184.216.34"}},
+		{"a sibling of the matched name is refused", "ex*.example.com", "ex1.example.com", "ex2.example.com", nil},
+		{"the parent of the matched name is refused", "ex*.example.com", "ex1.example.com", "cdn.example.com", nil},
+		{"under a wildcard pattern, the zone is the matched label", "*.ex*.example.com", "a.ex1.example.com", "b.ex1.example.com", []string{"v4 93.184.216.34"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			env, err := loadList(t, c.entry+"\n", withSameZone(true))
+			if err != nil {
+				t.Fatal(err)
+			}
+			env.handleDNS(reply(c.qname,
+				rr{c.qname, typeCNAME, classIN, 300, wireName(c.target)},
+				rr{c.target, typeA, classIN, 300, a("93.184.216.34")}))
+			if got := env.conn.added(); !equal(got, c.want) {
+				t.Errorf("added %v, want %v (log %q)", got, c.want, env.logged())
+			}
+		})
+	}
+}

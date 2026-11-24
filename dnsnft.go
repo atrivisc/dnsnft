@@ -152,7 +152,7 @@ func main() {
 	if d.domains, loadErr = d.loadDomains(cfg.domFile); loadErr != nil {
 		log.Fatal(loadErr)
 	}
-	log.Printf("loaded %d domains", len(d.domains))
+	log.Printf("loaded %d domains", d.domains.len())
 
 	nfqLog := newNfqLogger()
 	var queueErr error

@@ -64,6 +64,8 @@ running.
 # domain            [ipv4-set  [ipv6-set]]
 example.com                             # this name only
 *.cdn.example.com                       # the name and everything under it
+ex*.example.com                         # ex.example.com, ex1.example.com, ...
+*.api*.example.org                      # api2.example.org and everything under it
 *.internal.test     int4      int6      # into sets of its own
 legacy.example.org  allow4    -         # IPv4 only
 ```
@@ -72,6 +74,18 @@ Without sets on the line the defaults from `-4` and `-6` are used. `-` leaves
 that family out. Names are case insensitive and a trailing dot is fine. The
 list is read at startup and on SIGHUP; if a reload fails the old list stays in
 place.
+
+A `*` inside a label, as in `ex*.example.com`, stands for any run of
+characters in that one label, including none. It never matches a dot, so
+`ex*.example.com` matches `ex1.example.com` but not `a.ex1.example.com` or
+`ex1.sub.example.com`; put `*.` in front of the pattern to take in the names
+under it as well. A label can hold more than one star (`a*b*c.example.com`),
+and any label of the name can have them, but a label made only of stars is
+refused: `*` on its own is only allowed as the leading `*.`. When more than one
+entry fits a name, plain names win over patterns and the first matching pattern
+in the file wins over later ones. For `-C`, the zone of a pattern is the name
+it matched, so a CNAME from `ex1.example.com` may point under
+`ex1.example.com`, not elsewhere under `example.com`.
 
 ### 4. Running it
 
@@ -131,7 +145,8 @@ are taken from A and AAAA records belonging to the question name or to a CNAME
 it leads to. Records for anything else in the answer are skipped, so a reply
 cannot add addresses for a name you did not ask about.
 
-CNAMEs are followed only while they stay under the matched domain. A name in
+CNAMEs are followed only while they stay under the matched domain (for a
+pattern like `ex*.example.com`, the name the pattern matched). A name in
 the list pointing at a CDN outside it stops there, and the skipped target is
 logged. Pass `-C=false` where that is normal, as it is for most CDN-backed
 names, and the chain is then followed wherever it leads.
